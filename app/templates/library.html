@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}Library — OSINT Monitor{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Library</h1>
+    <p>Captured audio, transcripts and search across both languages at once</p>
+  </div>
+</div>
+
+<div class="filter-row">
+  <input type="search" class="lib-search" id="f-search" spellcheck="false"
+         value="{{ q or '' }}"
+         placeholder="Search transcripts — vernacular and English at once…">
+  <select class="select" id="f-channel">
+    <option value="">All channels</option>
+    {% for c in channels %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+  </select>
+  <select class="select" id="f-language">
+    <option value="">All languages</option>
+    {% for p in packs %}<option value="{{ p.code }}">{{ p.name }}</option>{% endfor %}
+  </select>
+  <select class="select" id="f-status">
+    <option value="">Any status</option>
+    <option value="captured">Captured</option>
+    <option value="queued">Queued</option>
+    <option value="transcribed">Transcribed</option>
+    <option value="filtered">Filtered out</option>
+  </select>
+  <span class="dim" id="result-count" style="margin-left:auto;font-size:12px"></span>
+</div>
+
+<div id="results"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(async function () {
+  const packs = await OSINT.api('/packs').catch(() => []);
+  const host  = document.getElementById('results');
+  const count = document.getElementById('result-count');
+  const search = document.getElementById('f-search');
+  const status = document.getElementById('f-status');
+  let query = {{ (q or '')|tojson }};
+
+  const chanName = {};
+  (await OSINT.api('/channels').catch(() => [])).forEach(c => chanName[c.id] = c.name);
+
+  async function renderSearch(q) {
+    const lang = document.getElementById('f-language').value;
+    const chan = document.getElementById('f-channel').value;
+    const params = new URLSearchParams({ q });
+    if (lang) params.set('language', lang);
+    if (chan) params.set('channel', chan);
+
+    const res = await OSINT.api(`/search?${params}`);
+    count.textContent = `${res.count} match${res.count === 1 ? '' : 'es'} for "${q}"`;
+
+    if (!res.count) {
+      host.innerHTML = OSINT.empty('i-search', 'No matches',
+        'Search covers the vernacular transcript and the English translation together. ' +
+        'Nothing has been transcribed yet if the library is empty.');
+      return;
+    }
+
+    // Snippets carry <mark> tags from SQLite FTS — the one place we render HTML
+    // from the API, and only because we generated the markup ourselves.
+    host.innerHTML = res.hits.map(h => `
+      <a class="hit" href="/transcript/${h.segment_id}#u${h.id}">
+        <div class="hit-head">
+          ${OSINT.langChip(h.routed_language, packs)}
+          <span>${OSINT.esc(chanName[h.channel_id] || h.channel_id)}</span>
+          <span>·</span>
+          <span>${OSINT.eat(h.started_at_utc)}</span>
+          <span>·</span>
+          <span class="mono">${OSINT.clock(h.start_seconds)}</span>
+          ${h.quarantined ? '<span class="pill pill-warn" style="margin-left:auto">Quarantined</span>' : ''}
+        </div>
+        <div class="hit-body">
+          <div class="v">${h.snip_vern || ''}</div>
+          <div class="e">${h.snip_eng || ''}</div>
+        </div>
+      </a>`).join('');
+  }
+
+  async function renderBrowse() {
+    const chan   = document.getElementById('f-channel').value;
+    const status = document.getElementById('f-status').value;
+    const params = new URLSearchParams();
+    if (chan) params.set('channel', chan);
+    if (status) params.set('status', status);
+
+    const rows = await OSINT.api(`/segments?${params}`);
+    count.textContent = `${rows.length} segment${rows.length === 1 ? '' : 's'}`;
+
+    if (!rows.length) {
+      host.innerHTML = OSINT.empty('i-library', 'Nothing captured yet',
+        'Start the capture worker to begin archiving the six registered channels. ' +
+        'Capture runs continuously; transcription is queued by daypart priority, because ' +
+        'this machine can process roughly five audio-hours a day against the 144 the ' +
+        'channels produce.',
+        'python scripts/capture_worker.py');
+      return;
+    }
+
+    host.innerHTML = `<div class="table-wrap"><table class="data">
+      <thead><tr>
+        <th>Channel</th><th>Captured</th><th class="right">Duration</th>
+        <th>Status</th><th>Languages</th><th class="right">Utterances</th><th></th>
+      </tr></thead><tbody>
+      ${rows.map(r => `
+        <tr>
+          <td>${OSINT.esc(chanName[r.channel_id] || r.channel_id)}
+              ${r.source_type === 'user_upload'
+                ? '<span class="pill pill-info" style="margin-left:6px">Upload</span>' : ''}</td>
+          <td class="muted nowrap">${OSINT.eat(r.started_at_utc)}</td>
+          <td class="num muted">${OSINT.duration(r.duration_seconds)}</td>
+          <td><span class="pill ${r.status === 'transcribed' ? 'pill-ok'
+                : r.status === 'filtered' ? 'pill-idle' : 'pill-warn'}">${OSINT.esc(r.status)}</span></td>
+          <td>${(r.languages || []).map(l => OSINT.langChip(l, packs)).join(' ') || '<span class="dim">—</span>'}</td>
+          <td class="num muted">${r.utterance_count}</td>
+          <td class="right nowrap">
+            ${r.utterance_count ? `<a class="btn btn-sm btn-primary" href="/document/${r.id}">Read</a> ` : ''}
+            <a class="btn btn-sm" href="/transcript/${r.id}">Edit</a></td>
+        </tr>`).join('')}
+      </tbody></table></div>`;
+  }
+
+  // Searching matches utterance text; browsing lists whole segments. The status
+  // filter belongs to the segment list, so it is inert while a query is active.
+  function refresh() {
+    const searching = Boolean(query);
+    status.disabled = searching;
+    status.title = searching ? 'Status filters the segment list, not search results' : '';
+    return searching ? renderSearch(query) : renderBrowse();
+  }
+
+  let debounce;
+  search.addEventListener('input', () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      query = search.value.trim();
+      // Keep the address bar in step so a search can be linked or reloaded.
+      const url = new URL(location);
+      if (query) url.searchParams.set('q', query); else url.searchParams.delete('q');
+      history.replaceState(null, '', url);
+      refresh();
+    }, 250);
+  });
+
+  ['f-channel', 'f-language', 'f-status'].forEach(id =>
+    document.getElementById(id).addEventListener('change', refresh));
+  refresh();
+})();
+</script>
+{% endblock %}

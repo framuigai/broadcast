@@ -1,0 +1,15 @@
+// Reference set format — one JSON object per line (JSONL), UTF-8, no BOM.
+// Lines starting with // are ignored, so this file documents itself.
+//
+// RULES (Plan §9, CLAUDE.md §2.6):
+//   * Built from EXPERT NATIVE-SPEAKER transcription. Never from model output.
+//   * Frozen before Step 2 training begins.
+//   * Never trained on, tuned against, or edited to flatter a model.
+//   * If a reference is genuinely wrong: fix it, log it in eval/CHANGELOG.md,
+//     and re-baseline EVERY previously reported number.
+//
+// Fields: audio_path (relative to repo root), reference, language (ISO 639-3),
+//         channel_id, daypart, programme_type, notes
+//
+{"audio_path": "data/audio/inooro_fm/2026/09/23/inooro_fm_20260923T060000Z_000.opus", "reference": "Nĩ kũrĩ ũhoro mwega kuuma Nyeri ũmũthĩ", "language": "kik", "channel_id": "inooro_fm", "daypart": "Morning drive", "programme_type": "news", "notes": "Example row — replace with real expert transcription."}
+{"audio_path": "data/audio/ramogi_fm/2026/09/23/ramogi_fm_20260923T060000Z_000.opus", "reference": "Ber ahinya, winjo wach koa Kisumu kawuono", "language": "luo", "channel_id": "ramogi_fm", "daypart": "Morning drive", "programme_type": "news", "notes": "Example row — replace with real expert transcription."}

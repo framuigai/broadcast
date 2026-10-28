@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}Transcript — OSINT Monitor{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1 id="seg-title">Segment {{ segment.id }}</h1>
+    <p id="seg-sub" class="muted">Loading…</p>
+  </div>
+  <div class="spacer"></div>
+  <a class="btn btn-sm" href="{{ url_for('views.library') }}">← Library</a>
+</div>
+
+<div class="player">
+  <audio id="audio" controls preload="metadata" src="/api/audio/{{ segment.id }}"></audio>
+  <span class="dim mono" id="pos" style="font-size:12px">00:00</span>
+</div>
+
+<div class="transcript-layout">
+  <div>
+    <div class="table-wrap" id="utts"></div>
+    <div class="note">
+      <strong>Click a timestamp to seek.</strong> Both languages are kept side by side —
+      no report ever cites a translation without the vernacular source behind it.
+      Edit either column to correct it; every correction is stored as an in-domain
+      training pair for Step 2.
+    </div>
+  </div>
+
+  <aside class="side-panel">
+    <div class="section-head" style="margin-top:0">Provenance</div>
+    <div id="meta"></div>
+    <div class="section-head">Quality</div>
+    <div id="quality"></div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Why a line's English is (or is not) there. Flagged English is visible here,
+// for review, but withheld from documents and exports.
+function txNote(u) {
+  const why = OSINT.esc(u.translation_flag_reason || '');
+  switch (u.translation_status) {
+    case 'pending':     return 'translation pending…';
+    case 'flagged':     return `<span style="color:var(--red)">⚠ translation withheld from reports — ${why}</span>`;
+    case 'failed':      return `<span style="color:var(--red)">translation failed — ${why}</span>`;
+    case 'skipped':     return 'not translated while the transcript is withheld';
+    case 'unavailable': return 'no translation model assigned for this language';
+    case 'done':        return `machine translation · ${OSINT.esc(u.translation_model_ref || '')}`;
+    case 'corrected':   return 'analyst translation';
+    default:            return '';
+  }
+}
+(async function () {
+  const segId = {{ segment.id }};
+  const packs = await OSINT.api('/packs').catch(() => []);
+  const audio = document.getElementById('audio');
+  const seg   = await OSINT.api(`/segment/${segId}`);
+
+  document.getElementById('seg-title').textContent = seg.channel_name;
+  document.getElementById('seg-sub').textContent =
+    `${OSINT.eat(seg.started_at_utc)} EAT · ${OSINT.duration(seg.duration_seconds)} · ${seg.filename}`;
+
+  // --- provenance: what makes a report defensible if challenged ---------
+  document.getElementById('meta').innerHTML = [
+    ['Channel',     seg.channel_name],
+    ['Captured',    OSINT.eat(seg.started_at_utc) + ' EAT'],
+    ['Stored UTC',  seg.started_at_utc],
+    ['Duration',    OSINT.duration(seg.duration_seconds)],
+    ['Sample rate', `${seg.sample_rate} Hz`],
+    ['Source',      seg.source_type],
+    ['Status',      seg.status],
+    ['SHA-256',     (seg.sha256 || '').slice(0, 16) + '…'],
+  ].map(([k, v]) => `<div class="kv"><span class="k">${OSINT.esc(k)}</span>
+                     <span class="v">${OSINT.esc(v)}</span></div>`).join('');
+
+  const utts = seg.utterances || [];
+  const nQ = utts.filter(u => u.quarantined).length;
+  const langs = [...new Set(utts.map(u => u.routed_language))];
+
+  document.getElementById('quality').innerHTML = `
+    <div class="kv"><span class="k">Utterances</span><span class="v">${utts.length}</span></div>
+    <div class="kv"><span class="k">Quarantined</span>
+      <span class="v ${nQ ? 'wer-bad' : 'wer-good'}">${nQ}</span></div>
+    <div class="kv"><span class="k">Languages</span>
+      <span class="v">${langs.join(', ') || '—'}</span></div>
+    <div class="kv"><span class="k">Model</span>
+      <span class="v" style="font-size:10px">${OSINT.esc(utts[0]?.model_ref || '—')}</span></div>
+    <div class="kv"><span class="k">Translation</span>
+      <span class="v" style="font-size:10px">${OSINT.esc(
+        utts.find(u => u.translation_model_ref)?.translation_model_ref || '—')}</span></div>`;
+
+  // --- utterances ------------------------------------------------------
+  const host = document.getElementById('utts');
+  const inFlight = ['captured', 'queued', 'transcribing', 'translating'].includes(seg.status);
+  if (!utts.length) {
+    host.innerHTML = OSINT.empty('i-wave',
+      inFlight ? 'Waiting for the background pipeline' : 'Not transcribed',
+      inFlight ? `Status: ${seg.status}. This page refreshes by itself when the transcript is ready.`
+               : `Status: ${seg.status}${seg.filter_reason ? ' — ' + seg.filter_reason : ''}.`);
+    if (inFlight) setTimeout(() => location.reload(), 10000);
+    return;
+  }
+
+  host.innerHTML = utts.map(u => {
+    const conf = u.routing_confidence == null ? 1 : u.routing_confidence;
+    const pk = packs.find(p => p.code === u.routed_language) || { colour: '#888' };
+    return `
+    <div class="utt ${u.quarantined ? 'quarantined' : ''}" id="u${u.id}"
+         data-start="${u.start_seconds}" data-end="${u.end_seconds}" data-id="${u.id}">
+      <div class="ts" title="Seek to this moment">${OSINT.clock(u.start_seconds)}</div>
+      <div>
+        <div class="vern" contenteditable="true" data-field="text_vernacular"
+             >${OSINT.esc(u.text_vernacular || '')}</div>
+        <div class="conf-bar" title="Routing confidence ${OSINT.pct(conf)}">
+          <i style="width:${conf * 100}%;background:${pk.colour}"></i></div>
+      </div>
+      <div>
+        <div class="eng" contenteditable="true" data-field="text_english"
+             >${OSINT.esc(u.text_english || '')}</div>
+        <div class="tx-note dim" style="font-size:10.5px;margin-top:5px">${txNote(u)}</div>
+        ${u.quarantined
+          ? `<div class="dim" style="font-size:10.5px;margin-top:5px;color:var(--red)">
+               ⚠ ${OSINT.esc(u.quarantine_reason || 'quarantined')}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  // --- click-to-seek ----------------------------------------------------
+  host.querySelectorAll('.ts').forEach(el => {
+    el.addEventListener('click', () => {
+      audio.currentTime = parseFloat(el.parentElement.dataset.start) || 0;
+      audio.play();
+    });
+  });
+
+  // --- follow playback --------------------------------------------------
+  const rows = [...host.querySelectorAll('.utt')];
+  audio.addEventListener('timeupdate', () => {
+    const t = audio.currentTime;
+    document.getElementById('pos').textContent = OSINT.clock(t);
+    rows.forEach(r => {
+      const on = t >= +r.dataset.start && t < +r.dataset.end;
+      r.classList.toggle('playing', on);
+    });
+  });
+
+  // --- translation arrives in the background -----------------------------
+  // Poll while any line is still awaiting English, and fill it in place —
+  // never over a cell the analyst is editing.
+  const txStatus = new Map(utts.map(u => [String(u.id), u.translation_status]));
+  async function pollTranslations() {
+    if (![...txStatus.values()].includes('pending')) return;
+    const fresh = await OSINT.api(`/segment/${seg.id}`).catch(() => null);
+    for (const u of (fresh?.utterances || [])) {
+      const row = document.getElementById(`u${u.id}`);
+      if (!row || txStatus.get(String(u.id)) === u.translation_status) continue;
+      const eng = row.querySelector('.eng');
+      if (document.activeElement !== eng) {
+        eng.textContent = u.text_english || '';
+        eng.dataset.baseline = eng.textContent;   // machine output is not a correction
+      }
+      row.querySelector('.tx-note').innerHTML = txNote(u);
+      txStatus.set(String(u.id), u.translation_status);
+    }
+    setTimeout(pollTranslations, 8000);
+  }
+  setTimeout(pollTranslations, 8000);
+
+  // --- corrections: the training flywheel -------------------------------
+  host.querySelectorAll('[contenteditable]').forEach(el => {
+    el.dataset.baseline = el.textContent;
+    el.addEventListener('blur', async () => {
+      const after = el.textContent.trim();
+      if (after === el.dataset.baseline.trim()) return;
+      const id = el.closest('.utt').dataset.id;
+      try {
+        await OSINT.post(`/utterance/${id}/correct`,
+          { field: el.dataset.field, value: after });
+        el.dataset.baseline = after;
+        el.closest('.utt').classList.remove('quarantined');
+        el.style.boxShadow = '0 0 0 2px var(--teal-soft)';
+        setTimeout(() => { el.style.boxShadow = ''; }, 900);
+      } catch (e) {
+        el.style.boxShadow = '0 0 0 2px var(--red-soft)';
+        console.error('Correction failed:', e.message);
+      }
+    });
+  });
+
+  if (location.hash) document.querySelector(location.hash)?.scrollIntoView({ block: 'center' });
+})();
+</script>
+{% endblock %}

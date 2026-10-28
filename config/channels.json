@@ -1,0 +1,225 @@
+{
+  "_comment": "Channel registry. Single source of truth for capture. Adding a station is a config change, never a code change.",
+  "_schema_version": 1,
+  "channels": [
+    {
+      "id": "inooro_tv",
+      "name": "Inooro TV",
+      "broadcaster": "Royal Media Services",
+      "medium": "tv",
+      "primary_language": "kik",
+      "region": "Central Kenya / National",
+      "capture": {
+        "method": "yt-dlp",
+        "url": "https://www.youtube.com/@InooroTVKenya/live",
+        "fallback_urls": [
+          "https://www.youtube.com/watch?v=FKxVC3NHSp4"
+        ],
+        "resolve_live": true,
+        "verified_utc": "2026-09-23T11:25:00Z",
+        "_note": "Channel /live URL, NOT a watch URL. A 24/7 channel rotates its video id: the original watch URL for Inooro TV was already dead when checked on 2026-09-23. Always resolve the channel's current live video."
+      },
+      "routing_prior": {
+        "kik": 0.8,
+        "swh": 0.12,
+        "eng": 0.08
+      },
+      "accent": "#e2703a",
+      "enabled": true
+    },
+    {
+      "id": "kameme_tv",
+      "name": "Kameme TV",
+      "broadcaster": "Mediamax Network",
+      "medium": "tv",
+      "primary_language": "kik",
+      "region": "Central Kenya / National",
+      "capture": {
+        "method": "yt-dlp",
+        "url": "https://www.youtube.com/channel/UCd9nkc2XA77NMxBvQz35I2Q/live",
+        "fallback_urls": [
+          "https://www.youtube.com/watch?v=3sreKsrmJVY"
+        ],
+        "resolve_live": true,
+        "verified_utc": "2026-09-23T11:25:00Z",
+        "_note": "Channel /live URL, NOT a watch URL. A 24/7 channel rotates its video id: the original watch URL for Inooro TV was already dead when checked on 2026-09-23. Always resolve the channel's current live video.",
+        "known_issue": "Channel was between live streams when checked ('This live event will begin in a few moments'). Not a configuration fault — the /live URL resolves correctly. Expect it to capture once the channel is broadcasting.",
+        "known_issue_checked_utc": "2026-09-23T09:15:00Z"
+      },
+      "routing_prior": {
+        "kik": 0.8,
+        "swh": 0.12,
+        "eng": 0.08
+      },
+      "accent": "#c0392b",
+      "enabled": true
+    },
+    {
+      "id": "ramogi_tv",
+      "name": "Ramogi TV",
+      "broadcaster": "Royal Media Services",
+      "medium": "tv",
+      "primary_language": "luo",
+      "region": "Nyanza / National",
+      "capture": {
+        "method": "yt-dlp",
+        "url": "https://www.youtube.com/channel/UCE0YXdRyT9WC96KZfn7C9mQ/live",
+        "fallback_urls": [
+          "https://www.youtube.com/watch?v=qfmHPApvQL8"
+        ],
+        "resolve_live": true,
+        "verified_utc": "2026-09-23T11:25:00Z",
+        "_note": "Channel /live URL, NOT a watch URL. A 24/7 channel rotates its video id: the original watch URL for Inooro TV was already dead when checked on 2026-09-23. Always resolve the channel's current live video.",
+        "known_issue": "YouTube live stalls after ~2s from this network (HLS 1s DVR chunks; ffmpeg freezes at time=00:00:01.99). Inooro TV on the same platform works, so this is stream-specific, not platform-wide. Luo coverage is unaffected — Ramogi FM captures normally. Retry periodically; consider an SDR node for Nyanza in Phase 2.",
+        "known_issue_checked_utc": "2026-09-23T09:15:00Z"
+      },
+      "routing_prior": {
+        "luo": 0.8,
+        "swh": 0.12,
+        "eng": 0.08
+      },
+      "accent": "#2e86ab",
+      "enabled": true
+    },
+    {
+      "id": "inooro_fm",
+      "name": "Inooro FM",
+      "broadcaster": "Royal Media Services",
+      "medium": "fm",
+      "primary_language": "kik",
+      "region": "Central Kenya",
+      "capture": {
+        "method": "stream",
+        "fallback_urls": [
+          "https://radio.ke/357-inooro-fm.html"
+        ],
+        "resolved_stream_url": "https://inoorofm-atunwadigital.streamguys1.com/inoorofm",
+        "_note": "Direct CDN endpoint, verified by 8s ffmpeg capture. Resolved from the broadcaster's own player API rather than an aggregator re-host, so there is no third-party layer to break.",
+        "stream_codec": "AAC",
+        "cdn": "Atunwa Digital / StreamGuys",
+        "verified_utc": "2026-09-23T11:30:00Z",
+        "discovery_url": "https://radio.or.ke/inooro/"
+      },
+      "routing_prior": {
+        "kik": 0.82,
+        "swh": 0.11,
+        "eng": 0.07
+      },
+      "accent": "#e8a33d",
+      "enabled": true,
+      "frequency": "88.9 FM"
+    },
+    {
+      "id": "kameme_fm",
+      "name": "Kameme FM",
+      "broadcaster": "Mediamax Network",
+      "medium": "fm",
+      "primary_language": "kik",
+      "region": "Central Kenya",
+      "capture": {
+        "method": "stream",
+        "fallback_urls": [
+          "https://radio.garden/listen/kameme-fm-101-1/xhDmAfyc"
+        ],
+        "resolved_stream_url": "https://kamemefm-atunwadigital.streamguys1.com/kamemefm",
+        "_note": "Direct CDN endpoint, verified by 8s ffmpeg capture. Resolved from the broadcaster's own player API rather than an aggregator re-host, so there is no third-party layer to break.",
+        "stream_codec": "AAC",
+        "cdn": "Atunwa Digital / StreamGuys",
+        "verified_utc": "2026-09-23T11:30:00Z",
+        "discovery_url": "https://onlineradiobox.com/ke/kamemefm/?cs=ke.kamemefm"
+      },
+      "routing_prior": {
+        "kik": 0.82,
+        "swh": 0.11,
+        "eng": 0.07
+      },
+      "accent": "#d95d39",
+      "frequency": "101.1 FM"
+    },
+    {
+      "id": "ramogi_fm",
+      "name": "Ramogi FM",
+      "broadcaster": "Royal Media Services",
+      "medium": "fm",
+      "primary_language": "luo",
+      "region": "Nyanza",
+      "capture": {
+        "method": "stream",
+        "fallback_urls": [
+          "https://radio.ke/434-ramogi-fm.html"
+        ],
+        "resolved_stream_url": "https://ramogifm-atunwadigital.streamguys1.com/ramogifm",
+        "stream_codec": "AAC",
+        "cdn": "Atunwa Digital / StreamGuys",
+        "verified_utc": "2026-09-23T11:30:00Z",
+        "_note": "Direct CDN endpoint, verified by 8s ffmpeg capture. Resolved from the broadcaster's own player API rather than an aggregator re-host, so there is no third-party layer to break.",
+        "discovery_url": "https://radio.or.ke/ramogi/"
+      },
+      "routing_prior": {
+        "luo": 0.82,
+        "swh": 0.11,
+        "eng": 0.07
+      },
+      "accent": "#3aa6a0",
+      "enabled": true,
+      "frequency": "101.7 FM"
+    }
+  ],
+  "dayparts": {
+    "_comment": "Priority drives the transcription queue. Learned from Step 1 data, not guessed. Times are EAT (UTC+3).",
+    "windows": [
+      {
+        "name": "Morning drive",
+        "start": "05:00",
+        "end": "09:00",
+        "priority": "high"
+      },
+      {
+        "name": "Mid-morning talk",
+        "start": "09:00",
+        "end": "12:00",
+        "priority": "high"
+      },
+      {
+        "name": "Midday bulletin",
+        "start": "12:00",
+        "end": "13:30",
+        "priority": "high"
+      },
+      {
+        "name": "Afternoon",
+        "start": "13:30",
+        "end": "16:00",
+        "priority": "medium"
+      },
+      {
+        "name": "Evening drive",
+        "start": "16:00",
+        "end": "19:00",
+        "priority": "high"
+      },
+      {
+        "name": "Prime bulletin",
+        "start": "19:00",
+        "end": "21:30",
+        "priority": "high"
+      },
+      {
+        "name": "Late night",
+        "start": "21:30",
+        "end": "05:00",
+        "priority": "low"
+      }
+    ]
+  },
+  "_endpoint_resolution": {
+    "resolved_utc": "2026-09-23T11:30:00Z",
+    "method": "FM: broadcaster player API (api.instant.audio) + radio.garden redirect, then ffmpeg verification. TV: yt-dlp against channel /live.",
+    "findings": [
+      "Inooro TV watch id FKxVC3NHSp4 was DEAD ('live stream recording is not available').",
+      "Kameme TV watch id 3sreKsrmJVY was an archived VOD, not a live stream.",
+      "Ramogi TV watch id qfmHPApvQL8 was still live and matches its channel /live.",
+      "All three FM stations sit on the same Atunwa Digital / StreamGuys CDN (AAC)."
+    ]
+  }
+}

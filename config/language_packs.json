@@ -1,0 +1,234 @@
+{
+  "_comment": "Language Pack registry (Plan §3.2). Adding a language = adding an entry here. Never a code change.",
+  "_schema_version": 1,
+  "packs": [
+    {
+      "code": "eng",
+      "name": "English",
+      "autonym": "English",
+      "asr": {
+        "model_ref": "whisper-large-v3-turbo-ct2",
+        "whisper_token": "en",
+        "beam_size": 5,
+        "_baseline_note": "Stock Whisper. Strong on Kenyan-accented English.",
+        "_initial_prompt_note": "MEASURED AND REJECTED 2026-10-07. Priming the decoder with a short in-language, in-register prompt made output markedly WORSE on real broadcast audio: Kikuyu diacritics collapsed (37 -> 1 on one 60s segment, 32 -> 0 for Dholuo), text degenerated into character soup, and output shortened by up to 65%. avg_logprob improved while the text got worse - confident-when-wrong, exactly what CLAUDE.md 2.4 warns of. The wiring is kept and defaults to no prompt. Re-test against the frozen reference set before setting this, and have a native speaker write the text: the rejected prompts were machine-written and may themselves have been malformed."
+      },
+      "translation": {
+        "required": false,
+        "source_token": "eng_Latn"
+      },
+      "orthography": {
+        "diacritics": [],
+        "normalise": [
+          "lowercase",
+          "strip_punct",
+          "collapse_ws"
+        ]
+      },
+      "service_tier": 1,
+      "quarantine": {
+        "min_avg_logprob": -1.0,
+        "max_no_speech_prob": 0.6,
+        "max_repetition_ratio": 0.5
+      },
+      "colour": "#5b8def"
+    },
+    {
+      "code": "swh",
+      "name": "Kiswahili",
+      "autonym": "Kiswahili",
+      "asr": {
+        "model_ref": "paza-whisper-large-v3-turbo-ct2",
+        "whisper_token": "sw",
+        "beam_size": 5,
+        "_baseline_note": "Paza <|sw|>. Step 1 bake-off will compare against openchs and Sunbird.",
+        "_initial_prompt_note": "MEASURED AND REJECTED 2026-10-07. Priming the decoder with a short in-language, in-register prompt made output markedly WORSE on real broadcast audio: Kikuyu diacritics collapsed (37 -> 1 on one 60s segment, 32 -> 0 for Dholuo), text degenerated into character soup, and output shortened by up to 65%. avg_logprob improved while the text got worse - confident-when-wrong, exactly what CLAUDE.md 2.4 warns of. The wiring is kept and defaults to no prompt. Re-test against the frozen reference set before setting this, and have a native speaker write the text: the rejected prompts were machine-written and may themselves have been malformed."
+      },
+      "translation": {
+        "required": true,
+        "source_token": "swh_Latn",
+        "model_ref": "nllb-200-distilled-1.3B-ct2"
+      },
+      "orthography": {
+        "diacritics": [],
+        "normalise": [
+          "lowercase",
+          "strip_punct",
+          "collapse_ws"
+        ]
+      },
+      "sheng": {
+        "enabled": true,
+        "_note": "Sheng is a Kiswahili-matrix register, not a separate routing target (Plan §4.3). Handled as a text layer on this pack.",
+        "lexicon": "config/lexicons/sheng.json"
+      },
+      "service_tier": 1,
+      "quarantine": {
+        "min_avg_logprob": -1.0,
+        "max_no_speech_prob": 0.6,
+        "max_repetition_ratio": 0.5
+      },
+      "colour": "#27ae8f"
+    },
+    {
+      "code": "kik",
+      "name": "Kikuyu",
+      "autonym": "Gĩkũyũ",
+      "asr": {
+        "model_ref": "paza-whisper-large-v3-turbo-ct2",
+        "whisper_token": "kik",
+        "beam_size": 5,
+        "_baseline_note": "Paza <|kik|> is the BASELINE TO BEAT. Step 2 replaces this with an independently trained kik adapter.",
+        "_initial_prompt_note": "MEASURED AND REJECTED 2026-10-07. Priming the decoder with a short in-language, in-register prompt made output markedly WORSE on real broadcast audio: Kikuyu diacritics collapsed (37 -> 1 on one 60s segment, 32 -> 0 for Dholuo), text degenerated into character soup, and output shortened by up to 65%. avg_logprob improved while the text got worse - confident-when-wrong, exactly what CLAUDE.md 2.4 warns of. The wiring is kept and defaults to no prompt. Re-test against the frozen reference set before setting this, and have a native speaker write the text: the rejected prompts were machine-written and may themselves have been malformed."
+      },
+      "translation": {
+        "required": true,
+        "source_token": "kik_Latn",
+        "model_ref": "nllb-200-distilled-1.3B-ct2"
+      },
+      "orthography": {
+        "diacritics": [
+          "ĩ",
+          "ũ",
+          "Ĩ",
+          "Ũ"
+        ],
+        "normalise": [
+          "lowercase",
+          "strip_punct",
+          "collapse_ws",
+          "preserve_diacritics"
+        ],
+        "_note": "preserve_diacritics MUST run. Stripping ĩ/ũ silently changes the language."
+      },
+      "service_tier": 1,
+      "quarantine": {
+        "min_avg_logprob": -1.1,
+        "max_no_speech_prob": 0.6,
+        "max_repetition_ratio": 0.5
+      },
+      "colour": "#e2703a"
+    },
+    {
+      "code": "luo",
+      "name": "Dholuo",
+      "autonym": "Dholuo",
+      "asr": {
+        "model_ref": "paza-whisper-large-v3-turbo-ct2",
+        "whisper_token": "luo",
+        "beam_size": 5,
+        "_baseline_note": "Paza <|luo|> is the BASELINE TO BEAT.",
+        "_initial_prompt_note": "MEASURED AND REJECTED 2026-10-07. Priming the decoder with a short in-language, in-register prompt made output markedly WORSE on real broadcast audio: Kikuyu diacritics collapsed (37 -> 1 on one 60s segment, 32 -> 0 for Dholuo), text degenerated into character soup, and output shortened by up to 65%. avg_logprob improved while the text got worse - confident-when-wrong, exactly what CLAUDE.md 2.4 warns of. The wiring is kept and defaults to no prompt. Re-test against the frozen reference set before setting this, and have a native speaker write the text: the rejected prompts were machine-written and may themselves have been malformed."
+      },
+      "translation": {
+        "required": true,
+        "source_token": "luo_Latn",
+        "model_ref": "nllb-200-distilled-1.3B-ct2"
+      },
+      "orthography": {
+        "diacritics": [],
+        "normalise": [
+          "lowercase",
+          "strip_punct",
+          "collapse_ws",
+          "normalise_atr"
+        ],
+        "_note": "Dholuo tone is unwritten — a known WER ceiling (Plan §4.5). ATR/vowel-harmony spelling varies across sources; normalise before scoring or WER measures spelling, not recognition."
+      },
+      "service_tier": 1,
+      "quarantine": {
+        "min_avg_logprob": -1.1,
+        "max_no_speech_prob": 0.6,
+        "max_repetition_ratio": 0.5
+      },
+      "colour": "#2e86ab"
+    }
+  ],
+  "models": {
+    "_comment": "Physical model artefacts. Pack -> model_ref -> this table. The indirection is what lets Step 2 swap in trained adapters without touching code.",
+    "whisper-large-v3-turbo-ct2": {
+      "hf_repo": "openai/whisper-large-v3-turbo",
+      "local_dir": "models/whisper-large-v3-turbo-ct2",
+      "format": "ctranslate2",
+      "compute_type": "int8",
+      "licence": "MIT",
+      "approx_size_gb": 0.81,
+      "convert_from_transformers": true,
+      "download_size_gb": 1.62
+    },
+    "paza-whisper-large-v3-turbo-ct2": {
+      "hf_repo": "microsoft/paza-whisper-large-v3-turbo",
+      "local_dir": "models/paza-whisper-large-v3-turbo-ct2",
+      "format": "ctranslate2",
+      "compute_type": "int8",
+      "licence": "MIT",
+      "approx_size_gb": 1.6,
+      "convert_from_transformers": true,
+      "extra_language_tokens": [
+        "kik",
+        "luo",
+        "kln",
+        "mas",
+        "som"
+      ],
+      "_note": "Paza adds non-standard Whisper language tokens. The converter must preserve the full tokenizer.",
+      "download_size_gb": 3.24,
+      "_size_note": "download_size_gb is the fp32 safetensors on the hub; approx_size_gb is the converted int8 artefact on disk. They differ ~2x — budget download time against the former."
+    },
+    "nllb-200-distilled-1.3B-ct2": {
+      "kind": "translation",
+      "hf_repo": "facebook/nllb-200-distilled-1.3B",
+      "local_dir": "models/nllb-200-distilled-1.3B-ct2",
+      "format": "ctranslate2",
+      "compute_type": "int8",
+      "licence": "CC-BY-NC-4.0",
+      "_licence_note": "NON-COMMERCIAL. Fine-tuned derivatives inherit it. Acceptable for the POC; must be decided before Step 2.",
+      "approx_size_gb": 1.4,
+      "download_size_gb": 5.5,
+      "fetch_files": [
+        "config.json",
+        "generation_config.json",
+        "special_tokens_map.json",
+        "tokenizer_config.json",
+        "tokenizer.json",
+        "sentencepiece.bpe.model",
+        "pytorch_model.bin"
+      ],
+      "copy_files": [
+        "tokenizer.json",
+        "sentencepiece.bpe.model"
+      ],
+      "beam_size": 4,
+      "max_input_tokens": 400,
+      "_note": "Text-to-text only: vernacular transcript -> English. Never sees audio. Loaded in its own pool slot, beside (not instead of) the ASR model."
+    }
+  },
+  "translation": {
+    "_comment": "Pipeline-wide translation settings. Per-language enablement is packs[].translation.model_ref. A pack may override any check under packs[].translation.checks.",
+    "target_pack": "eng",
+    "checks": {
+      "min_length_ratio": 0.3,
+      "max_length_ratio": 3.5,
+      "min_words_for_ratio": 4,
+      "max_repetition_ratio": 0.5,
+      "max_copy_ratio": 0.8,
+      "min_source_letter_share": 0.5,
+      "flag_biblical_register": true,
+      "_note": "Flagged English is stored but withheld from documents and exports until reviewed. Calibrate against real output; these are starting values, not measured ones."
+    }
+  },
+  "future_packs": {
+    "_comment": "Phase 2 targets. Listed to keep the registry honest about what it must scale to. Not active.",
+    "planned": [
+      "kln",
+      "luy",
+      "kam",
+      "som",
+      "guz",
+      "mas",
+      "mer",
+      "tuv",
+      "gax"
+    ]
+  }
+}

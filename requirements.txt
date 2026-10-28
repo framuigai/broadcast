@@ -1,0 +1,20 @@
+# Inference and serving — runs on this machine (CPU, no CUDA).
+flask>=3.0
+faster-whisper>=1.0        # CTranslate2 backend; do NOT use transformers for inference
+ctranslate2>=4.0
+
+# Model acquisition and one-off conversion only.
+huggingface_hub>=0.23
+transformers>=4.40
+torch>=2.2                 # CPU build; the GPU build belongs on the training node
+
+# Capture.
+yt-dlp>=2024.1             # ffmpeg is already installed on this machine (v9.0)
+
+# Audio handling and filtering (Plan §7).
+soundfile>=0.12
+librosa>=0.10
+numpy>=1.26
+
+# NOTE: no training dependencies here. Step 2 fine-tuning runs on a rented GPU,
+# not on this machine (Plan §1.3).

@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — OSINT Monitor{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Operations Dashboard</h1>
+    <p>Six channels · two vernacular languages · Step 1 baseline</p>
+  </div>
+  <div class="spacer"></div>
+  <a class="btn btn-ghost btn-sm" href="{{ url_for('views.evaluation_page') }}">View evaluation →</a>
+</div>
+
+<div class="stat-grid" id="stats">
+  <div class="stat skeleton" style="height:86px"></div>
+  <div class="stat skeleton" style="height:86px"></div>
+  <div class="stat skeleton" style="height:86px"></div>
+  <div class="stat skeleton" style="height:86px"></div>
+  <div class="stat skeleton" style="height:86px"></div>
+</div>
+
+<div class="section-head">Baseline model performance</div>
+<div id="eval-summary"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(async function () {
+  const packs = await OSINT.api('/packs').catch(() => []);
+
+  // --- stat tiles ------------------------------------------------------
+  try {
+    const s = await OSINT.api('/stats');
+    const tiles = [
+      { label: 'Channels live',    value: s.channels_enabled, unit: `/ ${s.channels_total}`,
+        sub: 'Registered in channels.json', tint: 'var(--accent)' },
+      { label: 'Captured today',   value: s.hours_today, unit: 'h',
+        sub: `${s.segments_today} segments`, tint: 'var(--teal)' },
+      { label: 'Archive',          value: s.hours_total, unit: 'h',
+        sub: `${s.segments_total} segments total`, tint: 'var(--blue)' },
+      { label: 'Utterances',       value: s.utterances, unit: '',
+        sub: `${s.queue_depth} awaiting transcription`, tint: 'var(--violet)' },
+      { label: 'Quarantine rate',  value: OSINT.pct(s.quarantine_rate), unit: '',
+        sub: `${s.quarantined} withheld from reports`,
+        tint: s.quarantine_rate > 0.15 ? 'var(--red)' : 'var(--teal)' },
+      { label: 'Corrections',      value: s.corrections, unit: '',
+        sub: 'In-domain training pairs', tint: 'var(--accent)' },
+    ];
+    document.getElementById('stats').innerHTML = tiles.map(t => `
+      <div class="stat" style="--tint:${t.tint}">
+        <div class="label">${OSINT.esc(t.label)}</div>
+        <div class="value">${OSINT.esc(t.value)}<span class="unit">${OSINT.esc(t.unit)}</span></div>
+        <div class="sub">${OSINT.esc(t.sub)}</div>
+      </div>`).join('');
+  } catch (e) {
+    document.getElementById('stats').innerHTML =
+      `<div class="note warn">Could not load statistics: ${OSINT.esc(e.message)}</div>`;
+  }
+
+  // --- evaluation summary ----------------------------------------------
+  const latest = await OSINT.api('/evaluation/latest').catch(() => ({}));
+  const evalHost = document.getElementById('eval-summary');
+
+  if (!Object.keys(latest).length) {
+    evalHost.innerHTML = OSINT.empty('i-chart', 'No baseline recorded yet',
+      'Step 1 establishes what off-the-shelf models achieve on real broadcast audio. ' +
+      'Transcribe a reference set, then record the run — that number is what everything ' +
+      'in Step 2 is measured against.',
+      'python scripts/evaluate.py --pack kik --set bcast_kik');
+  } else {
+    evalHost.innerHTML = `<div class="table-wrap"><table class="data">
+      <thead><tr>
+        <th>Pack</th><th>Model</th><th>Reference set</th>
+        <th class="right">WER</th><th class="right">CER</th>
+        <th class="right">Utterances</th><th>Normalisation</th><th>Recorded</th>
+      </tr></thead><tbody>
+      ${Object.entries(latest).map(([pack, r]) => `
+        <tr>
+          <td>${OSINT.langChip(pack, packs)}</td>
+          <td class="mono muted" style="font-size:11.5px">${OSINT.esc(r.model_ref)}</td>
+          <td class="muted">${OSINT.esc(r.reference_set)}</td>
+          <td class="num"><span class="wer-num ${OSINT.werClass(r.wer)}">${OSINT.pct(r.wer)}</span></td>
+          <td class="num muted">${OSINT.pct(r.cer)}</td>
+          <td class="num muted">${r.n_utterances ?? '—'}</td>
+          <td class="mono dim" style="font-size:11px">${OSINT.esc(r.normalisation)}</td>
+          <td class="muted nowrap">${OSINT.eat(r.created_at_utc)}</td>
+        </tr>`).join('')}
+      </tbody></table></div>
+      <div class="note"><strong>Read these per station and daypart, not as one figure.</strong>
+      A studio bulletin and a telephone call-in differ enormously, and an average hides both.</div>`;
+  }
+})();
+</script>
+{% endblock %}

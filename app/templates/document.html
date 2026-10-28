@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Transcript document — OSINT Monitor{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1 id="doc-title">Transcript</h1>
+    <p id="doc-sub" class="muted">Loading…</p>
+  </div>
+  <div class="spacer"></div>
+  <a class="btn btn-sm" href="/transcript/{{ segment.id }}">Editor view</a>
+  <a class="btn btn-sm" href="/api/document/{{ segment.id }}/export.txt">Download .txt</a>
+  <a class="btn btn-sm btn-primary" href="/api/document/{{ segment.id }}/export.md">Download .md</a>
+</div>
+
+<div class="doc-layout">
+  <article class="doc-sheet">
+    <div class="doc-toolbar">
+      <label class="dim" style="font-size:12px">
+        <input type="checkbox" id="show-withheld"> show withheld passages
+      </label>
+      <label class="dim" style="font-size:12px">
+        <input type="checkbox" id="show-ts" checked> timestamps
+      </label>
+      <span class="spacer"></span>
+      <button class="btn btn-sm" id="copy-btn">Copy text</button>
+    </div>
+    <div id="doc-body"></div>
+  </article>
+
+  <aside class="side-panel">
+    <div class="section-head" style="margin-top:0">Provenance</div>
+    <div id="doc-meta"></div>
+    <div class="section-head">Audio</div>
+    <audio id="doc-audio" controls preload="metadata"
+           src="/api/audio/{{ segment.id }}" style="width:100%"></audio>
+    <div class="note" style="margin-bottom:0;font-size:11.5px">
+      Withheld passages failed automated quality checks and are excluded pending
+      review. Verify against the source audio before relying on any passage.
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(async function () {
+  const id = {{ segment.id }};
+  const packs = await OSINT.api('/packs').catch(() => []);
+  let doc = await OSINT.api(`/document/${id}?include_withheld=1`);
+
+  document.getElementById('doc-title').textContent = doc.channel_name;
+  document.getElementById('doc-sub').textContent =
+    `${OSINT.eat(doc.started_at_utc)} EAT · ${OSINT.duration(doc.duration_seconds)} · `
+    + `${doc.utterances.length} utterances (${doc.withheld} withheld)`;
+
+  const langs = [...new Set(doc.utterances.map(u => u.routed_language))];
+  document.getElementById('doc-meta').innerHTML = [
+    ['Station',    doc.channel_name],
+    ['Broadcaster', doc.broadcaster || '—'],
+    ['Captured',   OSINT.eat(doc.started_at_utc) + ' EAT'],
+    ['Stored UTC', doc.started_at_utc],
+    ['Duration',   OSINT.duration(doc.duration_seconds)],
+    ['Language',   langs.join(', ') || '—'],
+    ['Model',      doc.utterances[0]?.model_ref || '—'],
+    ['Translation', doc.utterances.find(u => u.translation_model_ref)?.translation_model_ref || '—'],
+    ['Source',     doc.source_type],
+    ['SHA-256',    (doc.sha256 || '').slice(0, 20) + '…'],
+  ].map(([k, v]) => `<div class="kv"><span class="k">${OSINT.esc(k)}</span>
+                     <span class="v">${OSINT.esc(v)}</span></div>`).join('');
+
+  const audio = document.getElementById('doc-audio');
+
+  function render() {
+    const withheld = document.getElementById('show-withheld').checked;
+    const showTs   = document.getElementById('show-ts').checked;
+    const body     = document.getElementById('doc-body');
+
+    const rows = doc.utterances.filter(u => withheld || !u.quarantined);
+    if (!rows.length) {
+      body.innerHTML = OSINT.empty('i-library', 'Nothing to show',
+        'Every passage in this segment was withheld by the quality filter. '
+        + 'Tick "show withheld passages" to inspect them.');
+      return;
+    }
+
+    body.innerHTML = rows.map(u => {
+      const ts = showTs
+        ? `<span class="doc-ts" data-t="${u.start_seconds}">${OSINT.clock(u.start_seconds)}</span>`
+        : '';
+      if (u.quarantined) {
+        return `<p class="doc-withheld">${ts}
+          <em>Withheld — ${OSINT.esc(u.quarantine_reason || 'failed quality checks')}</em><br>
+          <span class="dim">${OSINT.esc(u.text_vernacular || '')}</span></p>`;
+      }
+      // Only checked English is shown; flagged translations are withheld (§2.4).
+      const en = u.text_english && u.english_publishable
+        ? `<span class="doc-en">${OSINT.esc(u.text_english)}</span>`
+        : u.translation_status === 'flagged'
+          ? `<span class="doc-en dim"><em>English withheld — ${OSINT.esc(
+              u.translation_flag_reason || 'failed automated checks')}</em></span>`
+          : u.translation_status === 'pending'
+            ? `<span class="doc-en dim"><em>translation pending…</em></span>` : '';
+      return `<p class="doc-para">${ts}
+        <span class="doc-vern">${OSINT.esc(u.text_vernacular || '')}</span>${en}</p>`;
+    }).join('');
+
+    body.querySelectorAll('.doc-ts').forEach(el => {
+      el.addEventListener('click', () => {
+        audio.currentTime = parseFloat(el.dataset.t) || 0;
+        audio.play();
+      });
+    });
+  }
+
+  document.getElementById('show-withheld').addEventListener('change', render);
+  document.getElementById('show-ts').addEventListener('change', render);
+
+  document.getElementById('copy-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('copy-btn');
+    const text = [...document.querySelectorAll('.doc-vern')]
+      .map(e => e.textContent.trim()).join('\n\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      btn.textContent = 'Copied';
+    } catch {
+      btn.textContent = 'Copy failed';
+    }
+    setTimeout(() => { btn.textContent = 'Copy text'; }, 1500);
+  });
+
+  render();
+})();
+</script>
+{% endblock %}

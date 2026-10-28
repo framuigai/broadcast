@@ -1,0 +1,398 @@
+{% extends "base.html" %}
+{% block title %}Live Monitor — OSINT Monitor{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Live Monitor</h1>
+    <p>Listen to any channel as it broadcasts, and record a clip the moment you hear something</p>
+  </div>
+</div>
+
+<div class="section-head">Background pipeline</div>
+<div id="pipeline" class="note">Checking…</div>
+
+<div class="live-toolbar">
+  <input type="search" id="ch-search" class="live-search" spellcheck="false"
+         placeholder="Search channels — name, broadcaster or language…">
+  <div class="seg-tabs" id="medium-tabs">
+    <button class="seg-tab is-on" type="button" data-medium="all">All<span class="seg-n" data-count="all"></span></button>
+    <button class="seg-tab" type="button" data-medium="tv">Television<span class="seg-n" data-count="tv"></span></button>
+    <button class="seg-tab" type="button" data-medium="fm">FM Radio<span class="seg-n" data-count="fm"></span></button>
+  </div>
+</div>
+
+<div id="live"></div>
+
+<div class="section-head">Recording jobs</div>
+<div id="jobs"></div>
+
+{# Live picture for TV channels. The platform's own player handles the video;
+   re-encoding it here would cost a transcode this machine has no headroom for. #}
+<div class="modal-backdrop" id="watch-modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="watch-title">
+    <div class="modal-head">
+      <div>
+        <h3 id="watch-title">Live broadcast</h3>
+        <div class="dim" id="watch-sub" style="font-size:12px"></div>
+      </div>
+      <div class="spacer"></div>
+      <a class="btn btn-sm" id="watch-external" target="_blank" rel="noopener" hidden>Open on YouTube ↗</a>
+      <button class="btn btn-sm btn-ghost" id="watch-close" type="button">Close</button>
+    </div>
+    <div class="modal-body" id="watch-body"></div>
+    {# Recording from here captures audio only — it is the same capture path as
+       the card buttons, so the clip is transcribed and translated as usual. #}
+    <div class="modal-rec" id="watch-rec">
+      <span class="dim" style="font-size:11.5px">Record audio</span>
+      <button class="btn btn-sm modal-rec-btn" type="button" data-secs="30">30s</button>
+      <button class="btn btn-sm modal-rec-btn" type="button" data-secs="60">1 min</button>
+      <button class="btn btn-sm modal-rec-btn" type="button" data-secs="300">5 min</button>
+      <span class="rec-custom">
+        <input class="rec-mins" id="watch-rec-mins" type="number" min="1" step="1"
+               placeholder="mins" aria-label="Recording length in minutes">
+        <button class="btn btn-sm btn-primary" id="watch-rec-go" type="button">Record</button>
+      </span>
+      <span class="spacer"></span>
+      <span class="dim" id="watch-rec-msg" style="font-size:11.5px"></span>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(async function () {
+  const packs = await OSINT.api('/packs').catch(() => []);
+  const chans = await OSINT.api('/channels').catch(() => []);
+  const host  = document.getElementById('live');
+
+  const MAX_SECS = {{ max_recording_seconds }};
+
+  // Cards are rendered per medium into their own labelled section: TV and radio
+  // are different jobs — one is watched, the other only heard — and mixing them
+  // in one grid made the page read as an undifferentiated wall.
+  const card = c => `
+    <div class="live-card" style="--ch:${OSINT.esc(c.accent)}" data-id="${OSINT.esc(c.id)}"
+         data-medium="${OSINT.esc(c.medium)}"
+         data-search="${OSINT.esc([c.name, c.broadcaster, c.region, c.language.name].join(' ').toLowerCase())}">
+      <div class="live-head">
+        <div>
+          <div class="live-name">${OSINT.esc(c.name)}</div>
+          <div class="live-sub">${OSINT.esc(c.broadcaster)} ·
+            ${c.medium === 'tv' ? 'Television' : 'FM Radio'}</div>
+        </div>
+        ${OSINT.langChip(c.language.code, packs)}
+      </div>
+
+      <div class="live-controls">
+        <button class="btn btn-primary listen-btn" data-id="${OSINT.esc(c.id)}">
+          <span class="lbl">▶ Listen</span>
+        </button>
+        ${c.medium === 'tv' ? `<button class="btn watch-btn" data-id="${OSINT.esc(c.id)}"
+            data-name="${OSINT.esc(c.name)}">▶ Watch</button>` : ''}
+        <audio class="live-audio" data-id="${OSINT.esc(c.id)}" preload="none"></audio>
+        <span class="live-state dim" data-id="${OSINT.esc(c.id)}"></span>
+      </div>
+
+      <div class="live-rec">
+        <span class="dim" style="font-size:11.5px">Record</span>
+        <button class="btn btn-sm rec-btn" data-id="${OSINT.esc(c.id)}" data-secs="30">30s</button>
+        <button class="btn btn-sm rec-btn" data-id="${OSINT.esc(c.id)}" data-secs="60">1 min</button>
+        <button class="btn btn-sm rec-btn" data-id="${OSINT.esc(c.id)}" data-secs="300">5 min</button>
+        <span class="rec-custom">
+          <input class="rec-mins" type="number" min="1" step="1" placeholder="mins"
+                 max="${Math.floor(MAX_SECS / 60)}" aria-label="Recording length in minutes">
+          <button class="btn btn-sm rec-go" data-id="${OSINT.esc(c.id)}">Record</button>
+        </span>
+      </div>
+    </div>`;
+
+  const MEDIA = [['tv', 'Television'], ['fm', 'FM Radio']];
+  host.innerHTML = MEDIA.map(([m, label]) => {
+    const group = chans.filter(c => c.medium === m);
+    if (!group.length) return '';
+    return `<section class="live-section" data-medium="${m}">
+        <div class="section-head">${label}</div>
+        <div class="live-grid">${group.map(card).join('')}</div>
+        <div class="note live-none" hidden>No ${label} channel matches that search.</div>
+      </section>`;
+  }).join('');
+
+  // --- search + medium filter ------------------------------------------
+  const search = document.getElementById('ch-search');
+  const tabs = document.getElementById('medium-tabs');
+  let medium = 'all';
+
+  document.querySelectorAll('.seg-n').forEach(el => {
+    const m = el.dataset.count;
+    el.textContent = m === 'all' ? chans.length : chans.filter(c => c.medium === m).length;
+  });
+
+  function applyFilter() {
+    const q = search.value.trim().toLowerCase();
+    document.querySelectorAll('.live-section').forEach(sec => {
+      const wanted = medium === 'all' || sec.dataset.medium === medium;
+      let shown = 0;
+      sec.querySelectorAll('.live-card').forEach(el => {
+        const hit = wanted && (!q || el.dataset.search.includes(q));
+        el.hidden = !hit;
+        if (hit) shown++;
+      });
+      sec.hidden = !wanted;
+      sec.querySelector('.live-none').hidden = shown > 0;
+    });
+  }
+
+  search.addEventListener('input', applyFilter);
+  tabs.addEventListener('click', ev => {
+    const btn = ev.target.closest('.seg-tab');
+    if (!btn) return;
+    medium = btn.dataset.medium;
+    tabs.querySelectorAll('.seg-tab').forEach(b => b.classList.toggle('is-on', b === btn));
+    applyFilter();
+  });
+
+  // --- listen ----------------------------------------------------------
+  host.querySelectorAll('.listen-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id    = btn.dataset.id;
+      const audio = host.querySelector(`.live-audio[data-id="${id}"]`);
+      const state = host.querySelector(`.live-state[data-id="${id}"]`);
+      const lbl   = btn.querySelector('.lbl');
+
+      if (!audio.paused && audio.src) {           // stop
+        audio.pause();
+        audio.removeAttribute('src');
+        audio.load();
+        lbl.textContent = '▶ Listen';
+        btn.classList.remove('is-live');
+        state.textContent = '';
+        return;
+      }
+
+      // Only one live stream at a time — each costs an ffmpeg process.
+      host.querySelectorAll('.live-audio').forEach(a => {
+        if (a !== audio && a.src) {
+          a.pause(); a.removeAttribute('src'); a.load();
+          const b = host.querySelector(`.listen-btn[data-id="${a.dataset.id}"]`);
+          if (b) { b.querySelector('.lbl').textContent = '▶ Listen'; b.classList.remove('is-live'); }
+        }
+      });
+
+      lbl.textContent = 'Connecting…';
+      state.textContent = 'resolving stream';
+      audio.src = `/api/listen/${encodeURIComponent(id)}`;
+      try {
+        await audio.play();
+        lbl.textContent = '■ Stop';
+        btn.classList.add('is-live');
+        state.innerHTML = '<span class="pill pill-live"><span class="dot pulse"></span>ON AIR</span>';
+      } catch (e) {
+        lbl.textContent = '▶ Listen';
+        state.innerHTML = `<span class="pill pill-warn">could not play</span>`;
+      }
+      audio.onerror = () => {
+        lbl.textContent = '▶ Listen';
+        btn.classList.remove('is-live');
+        state.innerHTML = '<span class="pill pill-warn">stream unavailable</span>';
+      };
+    });
+  });
+
+  // --- record ----------------------------------------------------------
+  const jobsHost = document.getElementById('jobs');
+  const tracked = new Map();
+
+  async function refreshJobs() {
+    const jobs = await OSINT.api('/record/jobs').catch(() => []);
+    if (!jobs.length) {
+      jobsHost.innerHTML = `<div class="note">No recordings yet. Use the buttons above to
+        capture a clip — it appears in the Library immediately, and the background
+        pipeline transcribes and translates it.</div>`;
+      return;
+    }
+    jobsHost.innerHTML = `<div class="table-wrap"><table class="data">
+      <thead><tr><th>Channel</th><th>Length</th><th>Started</th><th>State</th><th></th></tr></thead>
+      <tbody>${jobs.map(j => {
+        const cls = j.state === 'done' ? 'pill-ok'
+                  : j.state === 'failed' ? 'pill-live' : 'pill-warn';
+        const label = { recording: 'recording…', queued: 'queued for transcription',
+                        transcribing: 'transcribing…', translating: 'translating…',
+                        done: 'transcribed + translated' }[j.state] || j.state;
+        return `<tr>
+          <td>${OSINT.esc(j.channel_name)}</td>
+          <td class="num muted">${j.duration}s</td>
+          <td class="muted nowrap">${OSINT.eat(j.started_utc)}</td>
+          <td><span class="pill ${cls}">${OSINT.esc(label)}</span>
+              ${j.error ? `<span class="dim" style="margin-left:7px">${OSINT.esc(j.error.slice(0,70))}</span>` : ''}</td>
+          <td class="right">${j.segment_id
+            ? `<a class="btn btn-sm" href="/document/${j.segment_id}">Open transcript</a>` : ''}</td>
+        </tr>`;
+      }).join('')}</tbody></table></div>`;
+  }
+
+  async function startRecording(btn, id, secs) {
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '…';
+    try {
+      const r = await OSINT.post(`/record/${encodeURIComponent(id)}`, { duration: secs });
+      tracked.set(r.job_id, true);
+      await refreshJobs();
+    } catch (e) {
+      btn.textContent = 'failed';
+      console.error(e.message);
+    } finally {
+      setTimeout(() => { btn.disabled = false; btn.textContent = original; }, 1200);
+    }
+  }
+
+  host.querySelectorAll('.rec-btn').forEach(btn => {
+    btn.addEventListener('click', () =>
+      startRecording(btn, btn.dataset.id, parseInt(btn.dataset.secs, 10)));
+  });
+
+  // Arbitrary length: the presets are shortcuts, not the available choices.
+  host.querySelectorAll('.rec-go').forEach(btn => {
+    const field = btn.parentElement.querySelector('.rec-mins');
+    const go = () => {
+      const mins = parseFloat(field.value);
+      if (!(mins > 0)) { field.focus(); return; }
+      const secs = Math.round(mins * 60);
+      if (secs > MAX_SECS) {
+        field.setCustomValidity(`Maximum is ${Math.floor(MAX_SECS / 60)} minutes.`);
+        field.reportValidity();
+        return;
+      }
+      field.setCustomValidity('');
+      startRecording(btn, btn.dataset.id, secs);
+      field.value = '';
+    };
+    btn.addEventListener('click', go);
+    field.addEventListener('keydown', ev => { if (ev.key === 'Enter') go(); });
+    field.addEventListener('input', () => field.setCustomValidity(''));
+  });
+
+  // --- watch (TV only) --------------------------------------------------
+  const modal = document.getElementById('watch-modal');
+  const modalBody = document.getElementById('watch-body');
+  const modalExternal = document.getElementById('watch-external');
+  const recMsg = document.getElementById('watch-rec-msg');
+  const recMins = document.getElementById('watch-rec-mins');
+  let watchChannel = null;          // which channel the dialog is showing
+
+  recMins.max = Math.floor(MAX_SECS / 60);
+
+  // Recording from the dialog is the same capture path as the card buttons:
+  // audio only, since that is what transcription and translation consume.
+  async function recordFromModal(btn, secs) {
+    if (!watchChannel) return;
+    recMsg.textContent = '';
+    await startRecording(btn, watchChannel, secs);
+    recMsg.textContent = `Recording ${Math.round(secs / 60 * 10) / 10} min of audio — ` +
+      `it appears under Recording jobs below.`;
+  }
+
+  document.querySelectorAll('.modal-rec-btn').forEach(btn => {
+    btn.addEventListener('click', () => recordFromModal(btn, parseInt(btn.dataset.secs, 10)));
+  });
+
+  const modalRecGo = document.getElementById('watch-rec-go');
+  const modalRecSubmit = () => {
+    const mins = parseFloat(recMins.value);
+    if (!(mins > 0)) { recMins.focus(); return; }
+    const secs = Math.round(mins * 60);
+    if (secs > MAX_SECS) {
+      recMins.setCustomValidity(`Maximum is ${Math.floor(MAX_SECS / 60)} minutes.`);
+      recMins.reportValidity();
+      return;
+    }
+    recMins.setCustomValidity('');
+    recordFromModal(modalRecGo, secs);
+    recMins.value = '';
+  };
+  modalRecGo.addEventListener('click', modalRecSubmit);
+  recMins.addEventListener('keydown', ev => { if (ev.key === 'Enter') modalRecSubmit(); });
+  recMins.addEventListener('input', () => recMins.setCustomValidity(''));
+
+  function closeWatch() {
+    modal.hidden = true;
+    modalBody.innerHTML = '';          // detaches the iframe, stopping playback
+    modalExternal.hidden = true;
+    watchChannel = null;
+    recMsg.textContent = '';
+  }
+
+  document.getElementById('watch-close').addEventListener('click', closeWatch);
+  modal.addEventListener('click', ev => { if (ev.target === modal) closeWatch(); });
+  document.addEventListener('keydown', ev => {
+    if (ev.key === 'Escape' && !modal.hidden) closeWatch();
+  });
+
+  host.querySelectorAll('.watch-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const { id, name } = btn.dataset;
+      watchChannel = id;               // recording targets the channel on show
+      recMsg.textContent = '';
+      document.getElementById('watch-title').textContent = name;
+      document.getElementById('watch-sub').textContent = 'Resolving the live stream…';
+      modalBody.innerHTML = '<div class="watch-frame is-loading"></div>';
+      modal.hidden = false;
+
+      try {
+        const w = await OSINT.api(`/watch/${encodeURIComponent(id)}`);
+        document.getElementById('watch-sub').textContent =
+          'Live picture from the broadcaster. Recording still captures audio only.';
+        modalBody.innerHTML = `<div class="watch-frame"><iframe
+          src="${OSINT.esc(w.embed_url)}" title="${OSINT.esc(name)} live"
+          allow="autoplay; encrypted-media; picture-in-picture"
+          allowfullscreen frameborder="0"></iframe></div>`;
+        modalExternal.href = w.watch_url;
+        modalExternal.hidden = false;
+      } catch (e) {
+        document.getElementById('watch-sub').textContent = '';
+        modalBody.innerHTML = `<div class="note warn">Could not open the live feed:
+          ${OSINT.esc(e.message)}<br><span class="dim">A 24/7 channel rotates its video id,
+          and TV channels are only live on YouTube for part of the day.</span></div>`;
+      }
+    });
+  });
+
+  // --- pipeline status -------------------------------------------------
+  const pipeHost = document.getElementById('pipeline');
+  async function refreshPipeline() {
+    let p;
+    try { p = await OSINT.api('/pipeline/status'); }
+    catch { pipeHost.textContent = 'Pipeline status unavailable.'; return; }
+
+    const states = {
+      idle: ['pill-ok', 'idle — waiting for audio'],
+      starting: ['pill-warn', 'starting…'],
+      transcribing: ['pill-warn', `transcribing segment ${p.segment_id ?? ''}`],
+      translating: ['pill-warn', p.segment_id ? `translating segment ${p.segment_id}`
+                                              : 'translating backlog'],
+      locked_elsewhere: ['pill-live', 'not running — another process holds the pipeline'],
+      not_started: ['pill-live', p.enabled ? 'not running — start the app with python run.py'
+                                           : 'disabled (OSINT_BACKGROUND_PIPELINE=0)'],
+      stopped: ['pill-live', 'stopped'],
+    };
+    const [cls, label] = states[p.state] || ['pill-idle', p.state];
+    const models = [...(p.loaded_asr_models || []), ...(p.loaded_translation_models || [])];
+    pipeHost.innerHTML = `
+      <span class="pill ${cls}">${OSINT.esc(label)}</span>
+      <span class="dim" style="margin-left:10px">
+        ${p.queue_depth} segment(s) waiting · ${p.translation_backlog} line(s) awaiting English
+        ${models.length ? ` · loaded: ${models.map(OSINT.esc).join(', ')}` : ''}
+      </span>
+      ${p.translation_note ? `<div class="dim" style="margin-top:6px">⚠ ${OSINT.esc(p.translation_note)}</div>` : ''}
+      ${p.last_error ? `<div class="dim" style="margin-top:6px">Last error: ${OSINT.esc(p.last_error)}</div>` : ''}`;
+  }
+
+  refreshJobs();
+  refreshPipeline();
+  setInterval(refreshJobs, 5000);
+  setInterval(refreshPipeline, 5000);
+})();
+</script>
+{% endblock %}

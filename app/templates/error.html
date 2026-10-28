@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}{{ code }} — OSINT Monitor{% endblock %}
+{% block content %}
+<div class="empty" style="margin-top:60px">
+  <svg class="ico"><use href="#i-shield"/></svg>
+  <h3>{{ code }}</h3>
+  <p>{{ message }}</p>
+  <code><a href="{{ url_for('views.dashboard') }}">Back to dashboard</a></code>
+</div>
+{% endblock %}

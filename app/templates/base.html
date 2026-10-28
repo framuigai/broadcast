@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}OSINT Monitoring{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23f0a726'/><text x='16' y='23' font-size='18' font-weight='700' text-anchor='middle' fill='%231a1206' font-family='sans-serif'>O</text></svg>">
+</head>
+<body>
+
+<!-- icon sprite -->
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+  <symbol id="i-tv" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="m17 2-5 5-5-5"/></symbol>
+  <symbol id="i-radio" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M4.93 19.07a10 10 0 0 1 0-14.14M19.07 4.93a10 10 0 0 1 0 14.14M7.76 16.24a6 6 0 0 1 0-8.48M16.24 7.76a6 6 0 0 1 0 8.48"/></symbol>
+  <symbol id="i-library" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 9v4M12 16h.01"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 15 4-5 3 3 5-7"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5z"/><path d="m3 12 9 5 9-5M3 17l9 5 9-5"/></symbol>
+  <symbol id="i-wave" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 12h2l2-6 3 14 3-18 3 14 2-6h5"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+</svg>
+
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">O</div>
+      <div class="brand-text">
+        <strong>OSINT Monitor</strong>
+        <span>Vernacular Broadcast</span>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <div class="nav-group">
+        <div class="nav-label">Monitor</div>
+        <a class="nav-item {{ 'active' if page=='dashboard' }}" href="{{ url_for('views.dashboard') }}">
+          <svg class="ico"><use href="#i-grid"/></svg> Dashboard</a>
+        <a class="nav-item {{ 'active' if page=='live' }}" href="{{ url_for('views.live_monitor') }}">
+          <svg class="ico"><use href="#i-wave"/></svg> Live Monitor</a>
+        <a class="nav-item {{ 'active' if page=='tv' }}" href="{{ url_for('views.television') }}">
+          <svg class="ico"><use href="#i-tv"/></svg> Television
+          <span class="count">{{ nav_counts.tv }}</span></a>
+        <a class="nav-item {{ 'active' if page=='fm' }}" href="{{ url_for('views.radio') }}">
+          <svg class="ico"><use href="#i-radio"/></svg> FM Radio
+          <span class="count">{{ nav_counts.fm }}</span></a>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">Content</div>
+        <a class="nav-item {{ 'active' if page=='library' }}" href="{{ url_for('views.library') }}">
+          <svg class="ico"><use href="#i-library"/></svg> Library
+          <span class="count">{{ nav_counts.library }}</span></a>
+        <a class="nav-item {{ 'active' if page=='quarantine' }}" href="{{ url_for('views.quarantine_queue') }}">
+          <svg class="ico"><use href="#i-shield"/></svg> Quarantine
+          <span class="count">{{ nav_counts.quarantine }}</span></a>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">System</div>
+        <a class="nav-item {{ 'active' if page=='evaluation' }}" href="{{ url_for('views.evaluation_page') }}">
+          <svg class="ico"><use href="#i-chart"/></svg> Evaluation</a>
+        <a class="nav-item {{ 'active' if page=='packs' }}" href="{{ url_for('views.packs_page') }}">
+          <svg class="ico"><use href="#i-layers"/></svg> Language Packs
+          <span class="count">{{ packs|length }}</span></a>
+      </div>
+    </nav>
+
+    <div class="sidebar-foot">
+      <div><span class="phase">Phase 1 · POC</span></div>
+      <div style="margin-top:3px">Kikuyu &amp; Dholuo baseline</div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <form class="search-box" action="{{ url_for('views.library') }}" method="get">
+        <svg class="ico"><use href="#i-search"/></svg>
+        <input type="search" name="q" placeholder="Search transcripts — vernacular and English…"
+               value="{{ q if q is defined else '' }}" autocomplete="off">
+      </form>
+      <div class="topbar-right">
+        <span class="pill pill-idle" id="capture-pill"><span class="dot"></span> Capture idle</span>
+        <span class="clock" id="clock">--:--:--<small>EAT</small></span>
+      </div>
+    </header>
+
+    <main class="content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block title %}Evaluation — OSINT Monitor{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Model Evaluation</h1>
+    <p>WER and CER per language, per station, per daypart — never as one aggregate</p>
+  </div>
+</div>
+
+<div class="note warn">
+  <strong>Reference sets are frozen.</strong> Anything under <code>eval/references/</code>
+  is never trained on, tuned against, or edited to flatter a model. If a reference
+  transcript is genuinely wrong, correct it, record it in <code>eval/CHANGELOG.md</code>,
+  and re-baseline every previously reported number.
+</div>
+
+<div class="section-head">Current standing by pack</div>
+<div id="latest"></div>
+
+<div class="section-head">Reference sets</div>
+<div id="refsets"></div>
+
+<div class="section-head">Run history</div>
+<div id="history"></div>
+
+<div class="section-head">Ad-hoc scoring</div>
+<div class="table-wrap" style="padding:16px">
+  <p class="muted" style="margin-top:0;font-size:12.5px">
+    Paste a reference and a hypothesis to score them with the pack's own normalisation
+    rules — so the number is comparable with the recorded runs rather than a different metric.
+  </p>
+  <div class="filter-row">
+    <select class="select" id="s-pack">
+      {% for p in packs %}<option value="{{ p.code }}">{{ p.name }} ({{ p.code }})</option>{% endfor %}
+    </select>
+    <button class="btn btn-primary btn-sm" id="s-go">Score</button>
+  </div>
+  <textarea id="s-ref" class="select" rows="3" style="width:100%;margin-bottom:8px;resize:vertical"
+            placeholder="Reference (expert transcription)"></textarea>
+  <textarea id="s-hyp" class="select" rows="3" style="width:100%;resize:vertical"
+            placeholder="Hypothesis (model output)"></textarea>
+  <div id="s-out" style="margin-top:12px"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(async function () {
+  const packs = await OSINT.api('/packs').catch(() => []);
+
+  // --- current standing -------------------------------------------------
+  const latest = await OSINT.api('/evaluation/latest').catch(() => ({}));
+  const latestHost = document.getElementById('latest');
+
+  if (!Object.keys(latest).length) {
+    latestHost.innerHTML = OSINT.empty('i-chart', 'No evaluation runs recorded',
+      'Step 1 exists to produce these numbers. Build a reference set from expert ' +
+      'transcription of real broadcast audio, run the baseline, and record it — ' +
+      'everything in Step 2 is measured against what lands here.',
+      'python scripts/evaluate.py --pack kik --set bcast_kik');
+  } else {
+    latestHost.innerHTML = `<div class="stat-grid">
+      ${Object.entries(latest).map(([pack, r]) => {
+        const p = packs.find(x => x.code === pack) || { name: pack, colour: '#888' };
+        return `<div class="stat" style="--tint:${p.colour}">
+          <div class="label">${OSINT.esc(p.name)} · WER</div>
+          <div class="value ${OSINT.werClass(r.wer)}">${OSINT.pct(r.wer)}</div>
+          <div class="sub">CER ${OSINT.pct(r.cer)} · ${r.n_utterances || 0} utterances</div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
+
+  // --- reference sets ---------------------------------------------------
+  const sets = await OSINT.api('/evaluation/reference-sets').catch(() => []);
+  const refHost = document.getElementById('refsets');
+
+  if (!sets.length) {
+    refHost.innerHTML = OSINT.empty('i-inbox', 'No reference sets yet',
+      'A reference set is JSONL under <code>eval/references/</code>: one object per line ' +
+      'with an audio path, the expert transcription, and the language. Expert transcription ' +
+      'of four to six hours per language is the one unavoidable human task in Step 1 — ' +
+      'everything measurable waits on it.',
+      'eval/references/bcast_kik.jsonl');
+  } else {
+    refHost.innerHTML = `<div class="table-wrap"><table class="data">
+      <thead><tr><th>Set</th><th class="right">Items</th><th>Languages</th><th>Channels</th></tr></thead>
+      <tbody>${sets.map(s => `
+        <tr>
+          <td class="mono">${OSINT.esc(s.name)}</td>
+          <td class="num">${s.error ? '—' : s.items}</td>
+          <td>${s.error ? `<span class="wer-bad">${OSINT.esc(s.error)}</span>`
+                : (s.languages || []).map(l => OSINT.langChip(l, packs)).join(' ')}</td>
+          <td class="muted">${(s.channels || []).join(', ') || '—'}</td>
+        </tr>`).join('')}</tbody></table></div>`;
+  }
+
+  // --- history ----------------------------------------------------------
+  const hist = await OSINT.api('/evaluation/history').catch(() => []);
+  const histHost = document.getElementById('history');
+
+  if (!hist.length) {
+    histHost.innerHTML = `<div class="note">No runs recorded yet. Each run stores its
+      normalisation signature — two runs with different normalisation are not comparable,
+      and the table will say so rather than letting you compare them anyway.</div>`;
+  } else {
+    // previous WER per pack, so each row can show its delta
+    const prev = {};
+    const ordered = [...hist].reverse();   // oldest first
+    const deltas = {};
+    ordered.forEach(r => {
+      if (prev[r.pack] != null) deltas[r.id] = r.wer - prev[r.pack];
+      prev[r.pack] = r.wer;
+    });
+
+    histHost.innerHTML = `<div class="table-wrap"><table class="data">
+      <thead><tr>
+        <th>Recorded</th><th>Pack</th><th>Model</th><th>Set</th><th>Station</th>
+        <th>Daypart</th><th class="right">WER</th><th class="right">Δ</th>
+        <th class="right">CER</th><th class="right">RTF</th><th>Normalisation</th>
+      </tr></thead><tbody>
+      ${hist.map(r => {
+        const d = deltas[r.id];
+        const cls = d == null ? 'delta-flat' : d > 0.005 ? 'delta-up'
+                  : d < -0.005 ? 'delta-down' : 'delta-flat';
+        const txt = d == null ? '—' : `${d > 0 ? '+' : ''}${(d * 100).toFixed(1)}pp`;
+        return `<tr>
+          <td class="muted nowrap">${OSINT.eat(r.created_at_utc)}</td>
+          <td>${OSINT.langChip(r.pack, packs)}</td>
+          <td class="mono dim" style="font-size:11px">${OSINT.esc(r.model_ref)}</td>
+          <td class="muted">${OSINT.esc(r.reference_set)}</td>
+          <td class="muted">${OSINT.esc(r.channel_id || 'all')}</td>
+          <td class="muted">${OSINT.esc(r.daypart || 'all')}</td>
+          <td class="num"><span class="wer-num ${OSINT.werClass(r.wer)}">${OSINT.pct(r.wer)}</span></td>
+          <td class="num"><span class="delta ${cls}">${txt}</span></td>
+          <td class="num muted">${OSINT.pct(r.cer)}</td>
+          <td class="num muted">${r.realtime_factor ? r.realtime_factor.toFixed(2) + '×' : '—'}</td>
+          <td class="mono dim" style="font-size:10.5px">${OSINT.esc(r.normalisation)}</td>
+        </tr>`;
+      }).join('')}
+      </tbody></table></div>
+      <div class="note"><strong>Δ compares against the previous run of the same pack.</strong>
+      A positive delta is a regression. Runs with different normalisation signatures are not
+      comparable at all — re-baseline instead of reading across them.</div>`;
+  }
+
+  // --- ad-hoc scoring ---------------------------------------------------
+  document.getElementById('s-go').addEventListener('click', async () => {
+    const out = document.getElementById('s-out');
+    try {
+      const r = await OSINT.post('/evaluation/score', {
+        pack: document.getElementById('s-pack').value,
+        reference: document.getElementById('s-ref').value,
+        hypothesis: document.getElementById('s-hyp').value,
+      });
+      out.innerHTML = `<div class="stat-grid">
+        <div class="stat" style="--tint:var(--accent)">
+          <div class="label">WER</div>
+          <div class="value ${OSINT.werClass(r.wer)}">${OSINT.pct(r.wer)}</div>
+          <div class="sub">${r.n_ref_words} reference words</div></div>
+        <div class="stat" style="--tint:var(--teal)">
+          <div class="label">CER</div>
+          <div class="value">${OSINT.pct(r.cer)}</div>
+          <div class="sub">${r.n_ref_chars} characters</div></div>
+        <div class="stat" style="--tint:var(--blue)">
+          <div class="label">Edits</div>
+          <div class="value" style="font-size:19px">
+            ${r.substitutions}S ${r.deletions}D ${r.insertions}I</div>
+          <div class="sub">substitutions / deletions / insertions</div></div>
+        <div class="stat" style="--tint:var(--violet)">
+          <div class="label">Normalisation</div>
+          <div class="value mono" style="font-size:12px;letter-spacing:0">${OSINT.esc(r.normalisation)}</div>
+          <div class="sub">Applied before scoring</div></div>
+      </div>`;
+    } catch (e) {
+      out.innerHTML = `<div class="note warn">${OSINT.esc(e.message)}</div>`;
+    }
+  });
+})();
+</script>
+{% endblock %}

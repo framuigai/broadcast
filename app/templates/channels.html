@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} — OSINT Monitor{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ title }}</h1>
+    <p>{{ subtitle }}</p>
+  </div>
+</div>
+
+<div class="card-grid" id="channels"></div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(async function () {
+  const packs = await OSINT.api('/packs').catch(() => []);
+  const chans = await OSINT.api('/channels?medium={{ medium }}').catch(() => []);
+  const host = document.getElementById('channels');
+
+  if (!chans.length) {
+    host.innerHTML = OSINT.empty('i-tv', 'No channels registered',
+      'Channels are defined in <code>config/channels.json</code>. Adding one is a config change, never a code change.');
+    return;
+  }
+
+  host.innerHTML = chans.map(c => {
+    const live = c.stats.last_seen_utc &&
+      (Date.now() - new Date(c.stats.last_seen_utc + 'Z').getTime()) < 15 * 60 * 1000;
+
+    const priorBar = c.candidates.map(code => {
+      const p = (packs.find(x => x.code === code) || {}).colour || '#555';
+      return `<div style="width:${(c.prior[code] || 0) * 100}%;background:${p}"></div>`;
+    }).join('');
+    const priorLegend = c.candidates.map(code => {
+      const pk = packs.find(x => x.code === code) || { colour: '#555', name: code };
+      return `<span><i style="background:${pk.colour}"></i>${OSINT.esc(pk.name)}
+              ${Math.round((c.prior[code] || 0) * 100)}%</span>`;
+    }).join('');
+
+    return `
+    <a class="ch-card" href="/channel/${encodeURIComponent(c.id)}" style="--ch:${OSINT.esc(c.accent)}">
+      <div class="ch-banner">
+        <span class="ch-medium">${c.medium === 'tv' ? 'Television' : 'FM Radio'}</span>
+        <span class="ch-live">${live
+          ? '<span class="pill pill-live"><span class="dot pulse"></span>LIVE</span>'
+          : '<span class="pill pill-idle"><span class="dot"></span>Idle</span>'}</span>
+      </div>
+      <div class="ch-body">
+        <div class="ch-title">
+          <h3>${OSINT.esc(c.name)}</h3>
+          <span class="broadcaster">${OSINT.esc(c.broadcaster)}</span>
+        </div>
+        <div class="ch-meta">
+          ${OSINT.langChip(c.language.code, packs)}
+          <span class="pill pill-idle">${OSINT.esc(c.region)}</span>
+          <span class="pill pill-info">${OSINT.esc(c.capture_method || 'unset')}</span>
+        </div>
+        <div>
+          <div class="prior-bar">${priorBar}</div>
+          <div class="prior-legend">${priorLegend}</div>
+        </div>
+        ${OSINT.healthRow(c)}
+        <div class="ch-stats">
+          <div class="ch-stat"><div class="n">${c.stats.hours}</div><div class="k">Hours</div></div>
+          <div class="ch-stat"><div class="n">${c.stats.segments}</div><div class="k">Segments</div></div>
+          <div class="ch-stat"><div class="n">${OSINT.ago(c.stats.last_seen_utc)}</div><div class="k">Last seen</div></div>
+        </div>
+      </div>
+    </a>`;
+  }).join('');
+})();
+</script>
+{% endblock %}

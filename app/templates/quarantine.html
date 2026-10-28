@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}Quarantine — OSINT Monitor{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Quarantine Queue</h1>
+    <p>Utterances withheld from reports pending review</p>
+  </div>
+  <div class="spacer"></div>
+  <div class="q-counts" id="q-counts"></div>
+</div>
+
+<div class="note warn">
+  <strong>Quarantine is a correctness control, not a quality nicety.</strong>
+  Whisper-family models hallucinate fluently on music and silence, and fabricated text
+  about real, identifiable people produces materially false assessments. Nothing here is
+  deleted: correct it and it becomes ASR training data; confirm it as noise and it becomes
+  filter training data. Both outcomes improve the system.
+</div>
+
+<div class="q-toolbar">
+  <input type="search" class="lib-search" id="q-search" spellcheck="false"
+         placeholder="Search withheld text — vernacular and English…">
+  <select class="select" id="q-channel"><option value="">All channels</option></select>
+  <select class="select" id="q-language"><option value="">All languages</option></select>
+  <select class="select" id="q-reason"><option value="">All reasons</option></select>
+</div>
+
+{# Reason mix doubles as a filter: the distribution is the first thing worth
+   knowing about a queue this size, and clicking a band is how you drill in. #}
+<div class="q-reasons" id="q-reasons"></div>
+
+<div id="queue"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(async function () {
+  const packs = await OSINT.api('/packs').catch(() => []);
+  const rows  = await OSINT.api('/quarantine').catch(() => []);
+  const host  = document.getElementById('queue');
+
+  if (!rows.length) {
+    document.querySelector('.q-toolbar').hidden = true;
+    host.innerHTML = OSINT.empty('i-shield', 'Queue is empty',
+      'No utterances are currently quarantined. This is either good news or a sign that ' +
+      'nothing has been transcribed yet.');
+    return;
+  }
+
+  const resolved = new Set();          // decided this session, kept visible
+  const packName = c => (packs.find(p => p.code === c) || {}).name || c;
+  const packColour = c => (packs.find(p => p.code === c) || {}).colour || 'var(--fg-dim)';
+
+  // ---- filter controls, populated from the data itself -------------------
+  const uniq = (key, label) => [...new Map(
+    rows.map(r => [r[key], label ? label(r) : r[key]])).entries()]
+    .sort((a, b) => String(a[1]).localeCompare(String(b[1])));
+
+  const fill = (id, pairs) => {
+    const sel = document.getElementById(id);
+    pairs.forEach(([value, text]) => sel.add(new Option(text, value)));
+    return sel;
+  };
+  const fChannel  = fill('q-channel',  uniq('channel_id', r => r.channel_name));
+  const fLanguage = fill('q-language', uniq('routed_language', r => packName(r.routed_language)));
+  const fReason   = fill('q-reason',   uniq('reason_category'));
+  const search    = document.getElementById('q-search');
+
+  // ---- filtering ---------------------------------------------------------
+  function matches(r) {
+    const q = search.value.trim().toLowerCase();
+    if (fChannel.value && r.channel_id !== fChannel.value) return false;
+    if (fLanguage.value && r.routed_language !== fLanguage.value) return false;
+    if (fReason.value && r.reason_category !== fReason.value) return false;
+    if (!q) return true;
+    return `${r.text_vernacular || ''} ${r.text_english || ''}`.toLowerCase().includes(q);
+  }
+
+  // ---- reason distribution ----------------------------------------------
+  const reasonsHost = document.getElementById('q-reasons');
+
+  function renderReasons(visible) {
+    const counts = new Map();
+    visible.forEach(r => counts.set(r.reason_category,
+                                    (counts.get(r.reason_category) || 0) + 1));
+    const total = visible.length || 1;
+    reasonsHost.innerHTML = [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([reason, n]) => `
+        <button class="q-reason ${fReason.value === reason ? 'is-on' : ''}"
+                type="button" data-reason="${OSINT.esc(reason)}">
+          <span class="q-reason-n">${n}</span>
+          <span class="q-reason-l">${OSINT.esc(reason)}</span>
+          <span class="q-reason-p">${Math.round(n / total * 100)}%</span>
+        </button>`).join('');
+
+    reasonsHost.querySelectorAll('.q-reason').forEach(b => {
+      b.addEventListener('click', () => {
+        // Clicking the active band clears it, so the chips toggle rather than trap.
+        fReason.value = fReason.value === b.dataset.reason ? '' : b.dataset.reason;
+        render();
+      });
+    });
+  }
+
+  // ---- the queue ---------------------------------------------------------
+  const countsHost = document.getElementById('q-counts');
+
+  function card(r) {
+    const vern = (r.text_vernacular || '').trim();
+    const eng = (r.text_english || '').trim();
+    return `
+    <article class="q-card ${resolved.has(r.id) ? 'is-resolved' : ''}" id="q${r.id}"
+             style="--ch:${packColour(r.routed_language)}">
+      <header class="q-head">
+        ${OSINT.langChip(r.routed_language, packs)}
+        <span class="q-chan">${OSINT.esc(r.channel_name || r.channel_id)}</span>
+        <span class="q-dot">·</span>
+        <span class="muted">${OSINT.eat(r.started_at_utc)}</span>
+        <span class="q-dot">·</span>
+        <span class="mono muted">${OSINT.clock(r.start_seconds)}</span>
+        <span class="spacer"></span>
+        <span class="pill pill-warn q-reason-pill"
+              title="${OSINT.esc(r.quarantine_reason || '')}"
+              >${OSINT.esc(r.reason_category)}</span>
+      </header>
+
+      <div class="q-body">
+        <div class="q-field">
+          <span class="q-label">Transcript</span>
+          <p class="q-text v">${OSINT.esc(vern || '(empty)')}</p>
+        </div>
+        ${eng ? `<div class="q-field">
+          <span class="q-label">English</span>
+          <p class="q-text e">${OSINT.esc(eng)}</p>
+        </div>` : ''}
+      </div>
+
+      <footer class="q-foot">
+        <span class="q-detail mono" title="${OSINT.esc(r.quarantine_reason || '')}"
+          >${OSINT.esc(r.quarantine_reason || '')}</span>
+        <span class="spacer"></span>
+        <span class="q-actions">
+          <button class="btn btn-sm" data-act="release" data-id="${r.id}">Release — genuine speech</button>
+          <button class="btn btn-sm" data-act="confirm_noise" data-id="${r.id}">Confirm noise</button>
+          <a class="btn btn-sm btn-ghost" href="/transcript/${r.segment_id}#u${r.id}">Open in context →</a>
+        </span>
+      </footer>
+    </article>`;
+  }
+
+  function render() {
+    const visible = rows.filter(matches);
+    renderReasons(visible);
+
+    countsHost.innerHTML =
+      `<span class="q-count-n">${visible.length}</span>
+       <span class="q-count-l">of ${rows.length} withheld</span>`;
+
+    if (!visible.length) {
+      host.innerHTML = OSINT.empty('i-search', 'Nothing matches those filters',
+        'Clear the search or widen the filters to see the rest of the queue.');
+      return;
+    }
+
+    host.innerHTML = visible.map(card).join('');
+
+    // These texts run long by their nature. They are clamped by default; only
+    // the ones actually cut off get a toggle, so a short line is not clickable.
+    host.querySelectorAll('.q-text').forEach(p => {
+      if (p.scrollHeight - p.clientHeight > 4) {
+        p.classList.add('is-truncated');
+        p.title = 'Click to show the full text';
+        p.addEventListener('click', () => p.classList.toggle('is-open'));
+      }
+    });
+
+    host.querySelectorAll('button[data-act]').forEach(b => {
+      b.addEventListener('click', async () => {
+        const el = document.getElementById('q' + b.dataset.id);
+        const foot = b.closest('.q-actions');
+        b.disabled = true;
+        try {
+          await OSINT.post(`/quarantine/${b.dataset.id}/resolve`, { action: b.dataset.act });
+          resolved.add(Number(b.dataset.id));
+          el.classList.add('is-resolved');
+          foot.innerHTML = `<span class="pill pill-ok">Resolved — ${
+            OSINT.esc(b.dataset.act.replace('_', ' '))}</span>`;
+        } catch (e) {
+          b.disabled = false;
+          foot.insertAdjacentHTML('beforeend',
+            `<span class="dim" style="margin-left:8px">Could not resolve: ${OSINT.esc(e.message)}</span>`);
+        }
+      });
+    });
+  }
+
+  let debounce;
+  search.addEventListener('input', () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(render, 200);
+  });
+  [fChannel, fLanguage, fReason].forEach(el => el.addEventListener('change', render));
+
+  render();
+})();
+</script>
+{% endblock %}

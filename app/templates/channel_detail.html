@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}{{ channel.name }} — OSINT Monitor{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ channel.name }}</h1>
+    <p>{{ channel.broadcaster }} · {{ channel.region }} ·
+       {{ 'Television' if channel.medium == 'tv' else 'FM Radio' }}</p>
+  </div>
+  <div class="spacer"></div>
+  <a class="btn btn-sm" href="{{ url_for('views.television') if channel.medium == 'tv' else url_for('views.radio') }}">← Back</a>
+</div>
+
+<div class="stat-grid" id="ch-stats"></div>
+
+<div class="section-head">Routing profile</div>
+<div class="table-wrap" style="padding:16px">
+  <div class="prior-bar" id="prior-bar" style="height:8px"></div>
+  <div class="prior-legend" id="prior-legend" style="margin-top:9px;font-size:11.5px"></div>
+</div>
+
+{# One editable URL row. 'field' and 'index' tell the API which key in
+   config/channels.json this row writes back to. #}
+{% macro url_row(label, field, value, index=0) %}
+<tr class="url-row" data-field="{{ field }}" data-index="{{ index }}">
+  <td class="muted nowrap">{{ label }}</td>
+  <td>
+    <div class="url-view" style="display:flex;align-items:center;gap:12px">
+      {% if value %}
+      <a class="mono url-text" href="{{ value }}" target="_blank" rel="noopener"
+         style="flex:1;min-width:0;font-size:11.5px;word-break:break-all">{{ value }}</a>
+      {% else %}
+      <span class="mono url-text dim" style="flex:1;min-width:0;font-size:11.5px">Not set</span>
+      {% endif %}
+      <button class="btn btn-sm url-edit" type="button">Edit</button>
+    </div>
+    <div class="url-form" style="display:none;gap:8px;align-items:center">
+      <input class="mono url-input" type="url" spellcheck="false" value="{{ value }}"
+             placeholder="https://…" style="flex:1;min-width:0;font-size:11.5px">
+      <button class="btn btn-sm btn-primary url-save" type="button">Save</button>
+      <button class="btn btn-sm btn-ghost url-cancel" type="button">Cancel</button>
+    </div>
+    <div class="dim url-msg" style="margin-top:6px;font-size:12px"></div>
+  </td>
+</tr>
+{% endmacro %}
+
+<div class="section-head">Capture configuration</div>
+<div class="table-wrap"><table class="data">
+  <tbody id="capture-rows">
+    {# The capture source key differs by method: yt-dlp reads capture.url,
+       stream reads capture.resolved_stream_url (capture.py). Show and edit
+       whichever one this channel is actually captured from. #}
+    {% set url_field = 'url' if channel.capture.method == 'yt-dlp' else 'resolved_stream_url' %}
+    {{ url_row('URL', url_field, channel.capture.get(url_field, '')) }}
+    {% for fb in channel.capture.fallback_urls or [] %}
+      {{ url_row('Fallback' if loop.length == 1 else 'Fallback %d'|format(loop.index),
+                 'fallback_urls', fb, loop.index0) }}
+    {% endfor %}
+    <tr><td class="muted">Primary language</td><td class="mono">{{ channel.primary_language }}</td></tr>
+  </tbody>
+</table></div>
+
+<div class="section-head">Recent segments</div>
+<div id="segments"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(async function () {
+  const id = {{ channel.id|tojson }};
+  const packs = await OSINT.api('/packs').catch(() => []);
+  const chans = await OSINT.api('/channels').catch(() => []);
+  const c = chans.find(x => x.id === id);
+  if (!c) return;
+
+  document.getElementById('ch-stats').innerHTML = [
+    { label: 'Archive', value: c.stats.hours, unit: 'h', sub: `${c.stats.segments} segments`, tint: c.accent },
+    { label: 'Transcribed', value: c.stats.transcribed, unit: '', sub: 'segments processed', tint: 'var(--teal)' },
+    { label: 'Last seen', value: OSINT.ago(c.stats.last_seen_utc), unit: '',
+      sub: OSINT.eat(c.stats.last_seen_utc), tint: 'var(--blue)' },
+  ].map(t => `<div class="stat" style="--tint:${t.tint}">
+      <div class="label">${OSINT.esc(t.label)}</div>
+      <div class="value" style="font-size:${String(t.value).length > 6 ? '17px' : '25px'}">
+        ${OSINT.esc(t.value)}<span class="unit">${OSINT.esc(t.unit)}</span></div>
+      <div class="sub">${OSINT.esc(t.sub)}</div></div>`).join('');
+
+  document.getElementById('prior-bar').innerHTML = c.candidates.map(code => {
+    const p = (packs.find(x => x.code === code) || {}).colour || '#555';
+    return `<div style="width:${(c.prior[code] || 0) * 100}%;background:${p}"></div>`;
+  }).join('');
+  document.getElementById('prior-legend').innerHTML = c.candidates.map(code => {
+    const pk = packs.find(x => x.code === code) || { colour: '#555', name: code, autonym: '' };
+    return `<span><i style="background:${pk.colour}"></i>${OSINT.esc(pk.name)}
+            — ${Math.round((c.prior[code] || 0) * 100)}%</span>`;
+  }).join('');
+
+  // ---- capture URL editing -------------------------------------------
+  // Live stream URLs go stale without warning; each row writes its own key back
+  // to config/channels.json, which stays the single source of truth.
+  document.querySelectorAll('.url-row').forEach(row => {
+    const view = row.querySelector('.url-view');
+    const form = row.querySelector('.url-form');
+    const input = row.querySelector('.url-input');
+    const msg = row.querySelector('.url-msg');
+    let text = row.querySelector('.url-text');
+
+    const showForm = on => {
+      view.style.display = on ? 'none' : 'flex';
+      form.style.display = on ? 'flex' : 'none';
+      msg.textContent = '';
+      if (on) { input.focus(); input.select(); }
+    };
+
+    row.querySelector('.url-edit').onclick = () => showForm(true);
+    row.querySelector('.url-cancel').onclick = () => {
+      input.value = text.tagName === 'A' ? text.getAttribute('href') : '';
+      showForm(false);
+    };
+    row.querySelector('.url-save').onclick = async () => {
+      msg.textContent = 'Saving…';
+      try {
+        const r = await OSINT.post(
+          `/channels/${encodeURIComponent(id)}/capture-url`,
+          { url: input.value.trim(),
+            field: row.dataset.field,
+            index: Number(row.dataset.index) });
+        // 'Not set' renders as a span; once a URL exists the row becomes a link.
+        if (text.tagName === 'A') {
+          text.textContent = r.url;
+          text.href = r.url;
+        } else {
+          text.outerHTML = `<a class="mono url-text" href="${OSINT.esc(r.url)}"
+            target="_blank" rel="noopener"
+            style="flex:1;min-width:0;font-size:11.5px;word-break:break-all"
+            >${OSINT.esc(r.url)}</a>`;
+          text = row.querySelector('.url-text');
+        }
+        showForm(false);
+        msg.textContent = r.unchanged ? 'Unchanged.' : 'Saved to config/channels.json.';
+      } catch (e) {
+        msg.textContent = `Could not save: ${e.message}`;
+      }
+    };
+    input.addEventListener('keydown', ev => {
+      if (ev.key === 'Enter') row.querySelector('.url-save').click();
+      if (ev.key === 'Escape') row.querySelector('.url-cancel').click();
+    });
+  });
+
+  const rows = await OSINT.api(`/segments?channel=${encodeURIComponent(id)}&limit=40`).catch(() => []);
+  const host = document.getElementById('segments');
+  if (!rows.length) {
+    host.innerHTML = OSINT.empty('i-wave', 'Nothing captured from this channel yet',
+      'Capture runs continuously once the worker is started; transcription is queued by ' +
+      'daypart priority.', 'python scripts/capture_worker.py --channel ' + id);
+    return;
+  }
+  host.innerHTML = `<div class="table-wrap"><table class="data">
+    <thead><tr><th>Captured (EAT)</th><th class="right">Duration</th><th>Status</th>
+    <th>Class</th><th class="right">Utterances</th><th></th></tr></thead><tbody>
+    ${rows.map(r => `<tr>
+      <td class="nowrap">${OSINT.eat(r.started_at_utc)}</td>
+      <td class="num muted">${OSINT.duration(r.duration_seconds)}</td>
+      <td><span class="pill ${r.status === 'transcribed' ? 'pill-ok' : 'pill-warn'}">${OSINT.esc(r.status)}</span></td>
+      <td class="muted">${OSINT.esc(r.content_class || '—')}</td>
+      <td class="num muted">${r.utterance_count}</td>
+      <td class="right"><a class="btn btn-sm" href="/transcript/${r.id}">Open</a></td>
+    </tr>`).join('')}</tbody></table></div>`;
+})();
+</script>
+{% endblock %}

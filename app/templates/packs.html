@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Language Packs — OSINT Monitor{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Language Packs</h1>
+    <p>The unit that makes 44+ languages tractable — adding one is a config change, never a code change</p>
+  </div>
+</div>
+
+<div class="card-grid" id="packs"></div>
+
+<div class="section-head">Model artefacts</div>
+<div class="table-wrap">
+  <table class="data">
+    <thead><tr>
+      <th>Reference</th><th>Hugging Face repo</th><th>Format</th><th>Compute</th>
+      <th>Licence</th><th class="right">Size</th><th>Local path</th>
+    </tr></thead>
+    <tbody>
+    {% for ref, m in models.items() %}
+      <tr>
+        <td class="mono">{{ ref }}</td>
+        <td class="muted">{{ m.hf_repo }}</td>
+        <td><span class="pill pill-info">{{ m.format }}</span></td>
+        <td class="mono muted">{{ m.compute_type }}</td>
+        <td><span class="pill pill-ok">{{ m.licence }}</span></td>
+        <td class="num muted">{{ m.approx_size_gb }} GB</td>
+        <td class="mono dim" style="font-size:11px">{{ m.local_dir }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(async function () {
+  const packs = await OSINT.api('/packs');
+  document.getElementById('packs').innerHTML = packs.map(p => `
+    <div class="ch-card" style="--ch:${OSINT.esc(p.colour)}">
+      <div class="ch-banner">
+        <span class="ch-medium">Tier ${p.service_tier}</span>
+        <span class="ch-live"><span class="pill pill-idle">${OSINT.esc(p.code)}</span></span>
+      </div>
+      <div class="ch-body">
+        <div class="ch-title">
+          <h3>${OSINT.esc(p.name)}</h3>
+          <span class="broadcaster">${OSINT.esc(p.autonym)}</span>
+        </div>
+        <div class="ch-meta">
+          <span class="pill pill-info">token &lt;|${OSINT.esc(p.whisper_token)}|&gt;</span>
+          ${p.needs_translation ? '<span class="pill pill-warn">Translated</span>'
+                                : '<span class="pill pill-ok">Native English</span>'}
+          ${p.diacritics.length
+            ? `<span class="pill pill-idle">${p.diacritics.map(OSINT.esc).join(' ')}</span>` : ''}
+        </div>
+        <div class="muted" style="font-size:12px;line-height:1.5">
+          ${OSINT.esc(p.baseline_note || '')}</div>
+        <div class="ch-stats">
+          <div class="ch-stat" style="grid-column:span 3">
+            <div class="k">Model</div>
+            <div class="mono dim" style="font-size:11px">${OSINT.esc(p.model_ref)}</div>
+          </div>
+        </div>
+      </div>
+    </div>`).join('');
+})();
+</script>
+{% endblock %}
